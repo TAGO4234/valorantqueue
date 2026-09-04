@@ -30,7 +30,6 @@
       -ms-user-select: text;
       user-select: text;
     }
-    /* نسمح بتحديد النص في الحقول والمدخلات */
     input, textarea {
       -webkit-user-select: text;
       -moz-user-select: text;
@@ -38,7 +37,7 @@
       user-select: text;
     }
 
-    /* ===== باقي الأنماط كما هي ===== */
+    /* ===== باقي الأنماط ===== */
     :root {
       --void: #0b1014;
       --panel: #111820;
@@ -261,12 +260,22 @@
     }
     .name-setup input { max-width: 200px; }
     .name-setup .current-name { font-size: 13px; color: var(--steel); margin-right: auto; }
+    /* تنسيق حقل الاسم داخل الغرفة */
+    .room-name-setup {
+      display: flex;
+      gap: 10px;
+      margin-top: 12px;
+      align-items: center;
+      flex-wrap: wrap;
+    }
+    .room-name-setup input { max-width: 180px; }
+    .room-name-setup .label { font-size: 13px; color: var(--steel); }
   </style>
 </head>
 <body>
   <div class="setup-banner" id="setupBanner">Firebase config not set yet.</div>
 
-  <!-- Main Lobby View -->
+  <!-- ===== MAIN LOBBY VIEW ===== -->
   <div class="wrap" id="mainView">
     <div class="hero">
       <div class="kicker"><span class="dot" id="connDot"></span> <span id="connLabel">ONLINE QUEUE SYSTEM</span></div>
@@ -306,7 +315,7 @@
     <footer>Valorant Fast Queue System</footer>
   </div>
 
-  <!-- Dedicated Room View -->
+  <!-- ===== ROOM VIEW (PARTY ROOM) ===== -->
   <div class="wrap" id="roomView" style="display:none; padding-top:40px;">
     <button class="btn ghost small" id="backBtn" style="margin-bottom:20px;">← Back to Main Queue</button>
     <div class="hero">
@@ -318,16 +327,22 @@
           <div class="stat-label">Players Joined</div>
         </div>
       </div>
-      <div style="margin-top:12px;">
+      <!-- حقل تغيير الاسم داخل الغرفة -->
+      <div class="room-name-setup">
+        <span class="label">Your name:</span>
+        <input type="text" id="roomUsernameInput" placeholder="Change name" maxlength="24">
+        <button class="btn small" id="roomUpdateNameBtn">Update</button>
         <button class="btn small ghost" id="refreshRoomBtn">↻ Refresh</button>
       </div>
     </div>
+
     <div class="section">
       <div class="section-head">
         <div class="section-title"><span class="bar"></span>Players in Room</div>
       </div>
       <div class="roster" id="activeRoomRoster"></div>
     </div>
+
     <div class="section">
       <div class="section-head">
         <div class="section-title"><span class="bar"></span>Room Party Codes</div>
@@ -339,6 +354,7 @@
       <div class="code-list" id="codeList"></div>
       <div class="empty" id="codeEmpty" style="display:none;">No codes posted in this room yet.</div>
     </div>
+
     <div style="margin-top: 40px; display:flex; gap:12px; flex-wrap:wrap;">
       <button class="btn ghost" id="copyInviteLinkBtn">Copy Invite Link</button>
       <button class="btn" id="leaveActiveRoomBtn">Leave Room</button>
@@ -353,7 +369,7 @@
 
   <script>
     (function() {
-      // -------------------- FIREBASE CONFIG --------------------
+      // ==================== FIREBASE CONFIG ====================
       const firebaseConfig = {
         apiKey: "AIzaSyCEtmNrTgrcx6zVSA57HYxXndaXTXwI2MM",
         authDomain: "valorantqueue-ae713.firebaseapp.com",
@@ -380,14 +396,14 @@
       firebase.initializeApp(firebaseConfig);
       const db = firebase.database();
 
-      // -------------------- CLIENT ID --------------------
+      // ==================== CLIENT ID ====================
       let clientId = localStorage.getItem('valorantClientId');
       if (!clientId) {
         clientId = 'p_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
         localStorage.setItem('valorantClientId', clientId);
       }
 
-      // -------------------- NAME --------------------
+      // ==================== NAME ====================
       let myName = localStorage.getItem('valorantQueueName');
       if (!myName) {
         const TAGS = ['GHOST','VIPER','RAVEN','BLAZE','ECHO','FALCON','STORM','SHADOW','RANGER','HAVOC','CIPHER','NOVA','WOLF','TITAN','REAPER','FROST','DRIFT','OMEGA'];
@@ -402,7 +418,7 @@
       let currentPresenceMap = {};
       let presenceInterval = null;
 
-      // -------------------- DOM HELPERS --------------------
+      // ==================== DOM HELPERS ====================
       const $ = id => document.getElementById(id);
       const roster = $('roster'), rosterEmpty = $('rosterEmpty');
       const codeInput = $('codeInput'), addCodeBtn = $('addCodeBtn');
@@ -414,14 +430,17 @@
       const updateNameBtn = $('updateNameBtn');
       const currentNameDisplay = $('currentNameDisplay');
       const refreshRoomBtn = $('refreshRoomBtn');
+      const roomUsernameInput = $('roomUsernameInput');
+      const roomUpdateNameBtn = $('roomUpdateNameBtn');
 
       function updateNameDisplay() {
         currentNameDisplay.textContent = 'Your name: ' + myName;
         usernameInput.value = myName;
+        roomUsernameInput.value = myName; // تحديث حقل الاسم داخل الغرفة
       }
       updateNameDisplay();
 
-      // -------------------- TOAST --------------------
+      // ==================== TOAST ====================
       function toast(msg) {
         toastEl.textContent = msg;
         toastEl.classList.add('show');
@@ -432,7 +451,7 @@
         return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
       }
 
-      // -------------------- PRESENCE MANAGEMENT --------------------
+      // ==================== PRESENCE MANAGEMENT ====================
       const myPresenceRef = db.ref('presence/' + clientId);
 
       function updatePresence() {
@@ -462,7 +481,7 @@
         presenceInterval = setInterval(updatePresence, 15000);
       }
 
-      // -------------------- CONNECTION --------------------
+      // ==================== CONNECTION ====================
       db.ref('.info/connected').on('value', snap => {
         const on = snap.val() === true;
         connDot.classList.toggle('offline', !on);
@@ -476,7 +495,7 @@
         }
       });
 
-      // -------------------- LISTENERS --------------------
+      // ==================== LISTENERS ====================
       db.ref('presence').on('value', snap => {
         cleanStalePresence(snap);
         const map = snap.val() || {};
@@ -594,16 +613,20 @@
         updateActiveRoomView(map);
       });
 
-      // -------------------- FUNCTIONS --------------------
+      // ==================== FUNCTIONS ====================
       function setUserName(newName) {
         if (!newName || newName === myName) return;
         myName = newName;
         localStorage.setItem('valorantQueueName', myName);
-        updateNameDisplay();
+        updateNameDisplay(); // تحديث الحقول في كل مكان
         updatePresence();
+
+        // تحديث عضوية الغرفة الحالية
         if (currentActiveRoomId) {
           db.ref('rooms/' + currentActiveRoomId + '/members/' + clientId).set(myName);
         }
+
+        // تحديث جميع الغرف التي ينتمي إليها المستخدم
         db.ref('rooms').once('value', snap => {
           const map = snap.val() || {};
           Object.keys(map).forEach(roomId => {
@@ -612,6 +635,7 @@
             }
           });
         });
+
         toast('Name updated');
       }
 
@@ -675,6 +699,8 @@
         window.location.hash = 'room=' + roomId;
         $('mainView').style.display = 'none';
         $('roomView').style.display = 'block';
+        // تحديث حقل الاسم داخل الغرفة بالقيمة الحالية
+        roomUsernameInput.value = myName;
         db.ref('rooms/' + roomId).once('value', snap => {
           const map = {};
           map[roomId] = snap.val();
@@ -728,7 +754,7 @@
         });
       }
 
-      // -------------------- EVENT LISTENERS --------------------
+      // ==================== EVENT LISTENERS ====================
       $('backBtn').addEventListener('click', closeRoomView);
       $('leaveActiveRoomBtn').addEventListener('click', () => {
         if (currentActiveRoomId) leaveRoom(currentActiveRoomId);
@@ -752,6 +778,7 @@
           .catch(() => toast("Couldn't reach the database"));
       }
 
+      // تحديث الاسم من الصفحة الرئيسية
       updateNameBtn.addEventListener('click', () => {
         const newName = usernameInput.value.trim();
         if (newName && newName !== myName) {
@@ -760,11 +787,24 @@
           toast('Please enter a name');
         }
       });
-
       usernameInput.addEventListener('keydown', e => {
         if (e.key === 'Enter') updateNameBtn.click();
       });
 
+      // تحديث الاسم من داخل الغرفة
+      roomUpdateNameBtn.addEventListener('click', () => {
+        const newName = roomUsernameInput.value.trim();
+        if (newName && newName !== myName) {
+          setUserName(newName);
+        } else if (!newName) {
+          toast('Please enter a name');
+        }
+      });
+      roomUsernameInput.addEventListener('keydown', e => {
+        if (e.key === 'Enter') roomUpdateNameBtn.click();
+      });
+
+      // زر التحديث اليدوي للغرفة
       refreshRoomBtn.addEventListener('click', () => {
         if (currentActiveRoomId) {
           db.ref('rooms/' + currentActiveRoomId).once('value', snap => {
