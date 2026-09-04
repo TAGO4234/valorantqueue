@@ -7,7 +7,38 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    /* === أنماط متطابقة مع الأصل === */
+    /* ===== منع التحديد العام مع استثناءات ===== */
+    * {
+      -webkit-user-select: none;
+      -moz-user-select: none;
+      -ms-user-select: none;
+      user-select: none;
+    }
+    /* استثناء العناصر التي نريد السماح بتحديدها (الأكواد، الأسماء، الحقول) */
+    .code-val,
+    .code-row,
+    .member-tag,
+    .chip,
+    input,
+    textarea,
+    .code-left,
+    .code-meta,
+    .room-name,
+    .btn {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+    /* نسمح بتحديد النص في الحقول والمدخلات */
+    input, textarea {
+      -webkit-user-select: text;
+      -moz-user-select: text;
+      -ms-user-select: text;
+      user-select: text;
+    }
+
+    /* ===== باقي الأنماط كما هي ===== */
     :root {
       --void: #0b1014;
       --panel: #111820;
@@ -221,7 +252,6 @@
       .code-form input { max-width: 100%; }
       .add-room-card .add-row { flex-direction: column; }
     }
-    /* تنسيقات حقل الاسم */
     .name-setup {
       display: flex;
       gap: 10px;
@@ -350,14 +380,14 @@
       firebase.initializeApp(firebaseConfig);
       const db = firebase.database();
 
-      // -------------------- CLIENT ID (محفوظ في localStorage) --------------------
+      // -------------------- CLIENT ID --------------------
       let clientId = localStorage.getItem('valorantClientId');
       if (!clientId) {
         clientId = 'p_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
         localStorage.setItem('valorantClientId', clientId);
       }
 
-      // -------------------- NAME (محفوظ في localStorage) --------------------
+      // -------------------- NAME --------------------
       let myName = localStorage.getItem('valorantQueueName');
       if (!myName) {
         const TAGS = ['GHOST','VIPER','RAVEN','BLAZE','ECHO','FALCON','STORM','SHADOW','RANGER','HAVOC','CIPHER','NOVA','WOLF','TITAN','REAPER','FROST','DRIFT','OMEGA'];
@@ -405,34 +435,31 @@
       // -------------------- PRESENCE MANAGEMENT --------------------
       const myPresenceRef = db.ref('presence/' + clientId);
 
-      // تحديث الحضور (مع وقت)
       function updatePresence() {
         myPresenceRef.set({ name: myName, ts: Date.now() })
           .catch(err => console.warn('Presence update error:', err));
       }
 
-      // تنظيف الحضور القديم (أكثر من 30 ثانية)
       function cleanStalePresence(snapshot) {
         const now = Date.now();
         const map = snapshot.val() || {};
         let hasStale = false;
         Object.keys(map).forEach(id => {
           const entry = map[id];
-          if (entry.ts && (now - entry.ts) > 30000) { // 30 ثانية
+          if (entry.ts && (now - entry.ts) > 30000) {
             db.ref('presence/' + id).remove();
             hasStale = true;
           }
         });
         if (hasStale) {
-          // إعادة قراءة البيانات بعد التنظيف (سيتم عبر المستمع)
+          // سيتم تحديث الخريطة تلقائياً عبر المستمع
         }
       }
 
-      // بدء تحديث الحضور الدوري
       function startPresenceHeartbeat() {
         if (presenceInterval) clearInterval(presenceInterval);
-        updatePresence(); // فورية
-        presenceInterval = setInterval(updatePresence, 15000); // كل 15 ثانية
+        updatePresence();
+        presenceInterval = setInterval(updatePresence, 15000);
       }
 
       // -------------------- CONNECTION --------------------
@@ -441,7 +468,6 @@
         connDot.classList.toggle('offline', !on);
         connLabel.textContent = on ? 'ONLINE QUEUE SYSTEM' : 'RECONNECTING…';
         if (on) {
-          // تعيين onDisconnect لحذف الحضور عند الخروج
           myPresenceRef.onDisconnect().remove();
           updatePresence();
           startPresenceHeartbeat();
@@ -451,10 +477,8 @@
       });
 
       // -------------------- LISTENERS --------------------
-      // استمع لتغييرات الحضور مع تنظيف القديم
       db.ref('presence').on('value', snap => {
         cleanStalePresence(snap);
-        // تحديث الخريطة المحلية
         const map = snap.val() || {};
         currentPresenceMap = map;
         const players = Object.keys(map)
@@ -468,11 +492,10 @@
         rosterEmpty.style.display = players.length ? 'none' : 'block';
       });
 
-      // استمع لتغييرات الغرف
       db.ref('rooms').on('value', snap => {
         let map = snap.val() || {};
 
-        // ===== تطهير الأعضاء غير النشطين من كل غرفة =====
+        // تطهير الأعضاء غير النشطين
         Object.keys(map).forEach(roomId => {
           const room = map[roomId];
           if (!room.members) return;
@@ -492,7 +515,6 @@
           }
         });
 
-        // عرض الغرف
         const rooms = Object.keys(map).map(id => {
           const rm = map[id];
           return { id, ...rm, members: rm.members || {}, codes: rm.codes || {} };
@@ -538,7 +560,6 @@
 
         roomsGrid.innerHTML = html;
 
-        // ربط الأحداث
         roomsGrid.querySelectorAll('[data-join]').forEach(btn => {
           btn.addEventListener('click', () => joinRoom(btn.getAttribute('data-join')));
         });
@@ -570,7 +591,6 @@
           }
         }
 
-        // تحديث عرض الغرفة النشطة
         updateActiveRoomView(map);
       });
 
@@ -580,13 +600,10 @@
         myName = newName;
         localStorage.setItem('valorantQueueName', myName);
         updateNameDisplay();
-        // تحديث الحضور فوراً
         updatePresence();
-        // تحديث عضوية الغرفة الحالية
         if (currentActiveRoomId) {
           db.ref('rooms/' + currentActiveRoomId + '/members/' + clientId).set(myName);
         }
-        // تحديث جميع الغرف التي ينتمي إليها
         db.ref('rooms').once('value', snap => {
           const map = snap.val() || {};
           Object.keys(map).forEach(roomId => {
