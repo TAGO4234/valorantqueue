@@ -7,7 +7,7 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link href="https://fonts.googleapis.com/css2?family=Teko:wght@400;500;600;700&family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
   <style>
-    /* === نفس الأنماط الأصلية مع إضافة تنسيقات جديدة === */
+    /* === أنماط متطابقة مع الأصل === */
     :root {
       --void: #0b1014;
       --panel: #111820;
@@ -221,7 +221,7 @@
       .code-form input { max-width: 100%; }
       .add-room-card .add-row { flex-direction: column; }
     }
-    /* تنسيقات حقل الاسم الجديد */
+    /* تنسيقات حقل الاسم */
     .name-setup {
       display: flex;
       gap: 10px;
@@ -231,8 +231,6 @@
     }
     .name-setup input { max-width: 200px; }
     .name-setup .current-name { font-size: 13px; color: var(--steel); margin-right: auto; }
-    /* زر التحديث اليدوي */
-    .refresh-btn { margin-left: auto; }
   </style>
 </head>
 <body>
@@ -253,7 +251,6 @@
           <div class="stat-label">Active Rooms</div>
         </div>
       </div>
-      <!-- حقل تغيير الاسم -->
       <div class="name-setup">
         <span class="current-name" id="currentNameDisplay">Your name: </span>
         <input type="text" id="usernameInput" placeholder="Enter your name" maxlength="24">
@@ -291,7 +288,6 @@
           <div class="stat-label">Players Joined</div>
         </div>
       </div>
-      <!-- إضافة زر تحديث يدوي داخل الغرفة -->
       <div style="margin-top:12px;">
         <button class="btn small ghost" id="refreshRoomBtn">↻ Refresh</button>
       </div>
@@ -354,9 +350,14 @@
       firebase.initializeApp(firebaseConfig);
       const db = firebase.database();
 
-      // -------------------- CLIENT ID & NAME --------------------
-      const clientId = 'p_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
-      // استرجاع الاسم من localStorage أو توليد اسم عشوائي
+      // -------------------- CLIENT ID (محفوظ في localStorage) --------------------
+      let clientId = localStorage.getItem('valorantClientId');
+      if (!clientId) {
+        clientId = 'p_' + Math.random().toString(36).slice(2,10) + Date.now().toString(36);
+        localStorage.setItem('valorantClientId', clientId);
+      }
+
+      // -------------------- NAME (محفوظ في localStorage) --------------------
       let myName = localStorage.getItem('valorantQueueName');
       if (!myName) {
         const TAGS = ['GHOST','VIPER','RAVEN','BLAZE','ECHO','FALCON','STORM','SHADOW','RANGER','HAVOC','CIPHER','NOVA','WOLF','TITAN','REAPER','FROST','DRIFT','OMEGA'];
@@ -369,6 +370,7 @@
       let currentActiveRoomId = null;
       let hasAutoJoinedUrl = false;
       let currentPresenceMap = {};
+      let presenceInterval = null;
 
       // -------------------- DOM HELPERS --------------------
       const $ = id => document.getElementById(id);
@@ -383,7 +385,6 @@
       const currentNameDisplay = $('currentNameDisplay');
       const refreshRoomBtn = $('refreshRoomBtn');
 
-      // تحديث عرض الاسم الحالي
       function updateNameDisplay() {
         currentNameDisplay.textContent = 'Your name: ' + myName;
         usernameInput.value = myName;
@@ -401,27 +402,59 @@
         return String(s).replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' }[c]));
       }
 
-      // -------------------- CONNECTION STATUS --------------------
+      // -------------------- PRESENCE MANAGEMENT --------------------
+      const myPresenceRef = db.ref('presence/' + clientId);
+
+      // تحديث الحضور (مع وقت)
+      function updatePresence() {
+        myPresenceRef.set({ name: myName, ts: Date.now() })
+          .catch(err => console.warn('Presence update error:', err));
+      }
+
+      // تنظيف الحضور القديم (أكثر من 30 ثانية)
+      function cleanStalePresence(snapshot) {
+        const now = Date.now();
+        const map = snapshot.val() || {};
+        let hasStale = false;
+        Object.keys(map).forEach(id => {
+          const entry = map[id];
+          if (entry.ts && (now - entry.ts) > 30000) { // 30 ثانية
+            db.ref('presence/' + id).remove();
+            hasStale = true;
+          }
+        });
+        if (hasStale) {
+          // إعادة قراءة البيانات بعد التنظيف (سيتم عبر المستمع)
+        }
+      }
+
+      // بدء تحديث الحضور الدوري
+      function startPresenceHeartbeat() {
+        if (presenceInterval) clearInterval(presenceInterval);
+        updatePresence(); // فورية
+        presenceInterval = setInterval(updatePresence, 15000); // كل 15 ثانية
+      }
+
+      // -------------------- CONNECTION --------------------
       db.ref('.info/connected').on('value', snap => {
         const on = snap.val() === true;
         connDot.classList.toggle('offline', !on);
         connLabel.textContent = on ? 'ONLINE QUEUE SYSTEM' : 'RECONNECTING…';
         if (on) {
-          // تحديث الحضور فور الاتصال
-          myPresenceRef.set({ name: myName, ts: Date.now() });
-        }
-      });
-
-      // -------------------- PRESENCE (ONLINE PLAYERS) --------------------
-      const myPresenceRef = db.ref('presence/' + clientId);
-      db.ref('.info/connected').on('value', snap => {
-        if (snap.val() === true) {
+          // تعيين onDisconnect لحذف الحضور عند الخروج
           myPresenceRef.onDisconnect().remove();
-          myPresenceRef.set({ name: myName, ts: Date.now() });
+          updatePresence();
+          startPresenceHeartbeat();
+        } else {
+          if (presenceInterval) clearInterval(presenceInterval);
         }
       });
 
+      // -------------------- LISTENERS --------------------
+      // استمع لتغييرات الحضور مع تنظيف القديم
       db.ref('presence').on('value', snap => {
+        cleanStalePresence(snap);
+        // تحديث الخريطة المحلية
         const map = snap.val() || {};
         currentPresenceMap = map;
         const players = Object.keys(map)
@@ -435,7 +468,7 @@
         rosterEmpty.style.display = players.length ? 'none' : 'block';
       });
 
-      // -------------------- ROOMS LISTENER --------------------
+      // استمع لتغييرات الغرف
       db.ref('rooms').on('value', snap => {
         let map = snap.val() || {};
 
@@ -459,7 +492,7 @@
           }
         });
 
-        // الآن نعرض الغرف المتبقية
+        // عرض الغرف
         const rooms = Object.keys(map).map(id => {
           const rm = map[id];
           return { id, ...rm, members: rm.members || {}, codes: rm.codes || {} };
@@ -468,7 +501,6 @@
 
         roomCountEl.textContent = rooms.length;
 
-        // بناء HTML للغرف
         let html = rooms.map(rm => {
           const memberIds = Object.keys(rm.members);
           const memberNames = memberIds.map(id => rm.members[id]);
@@ -506,7 +538,7 @@
 
         roomsGrid.innerHTML = html;
 
-        // ربط الأحداث للأزرار
+        // ربط الأحداث
         roomsGrid.querySelectorAll('[data-join]').forEach(btn => {
           btn.addEventListener('click', () => joinRoom(btn.getAttribute('data-join')));
         });
@@ -524,71 +556,23 @@
           roomNameInput.addEventListener('keydown', e => { if (e.key === 'Enter') createRoom(); });
         }
 
-        // ===== الانضمام التلقائي من رابط (محسن) =====
+        // الانضمام التلقائي من الرابط
         if (!hasAutoJoinedUrl && window.location.hash.includes('#room=')) {
           const urlRoomId = window.location.hash.split('#room=')[1];
           if (urlRoomId && map[urlRoomId]) {
             const room = map[urlRoomId];
             if (room.members && room.members[clientId]) {
-              // المستخدم موجود بالفعل، فقط افتح العرض
               openRoomView(urlRoomId);
             } else {
               hasAutoJoinedUrl = true;
-              // تأكد من وجود الاسم في الحضور قبل الانضمام
-              myPresenceRef.set({ name: myName, ts: Date.now() }).then(() => {
-                joinRoom(urlRoomId);
-              }).catch(() => {
-                // إذا فشل، حاول الانضمام مباشرة
-                joinRoom(urlRoomId);
-              });
+              updatePresence().then(() => joinRoom(urlRoomId));
             }
           }
         }
 
-        // ===== تحديث عرض الغرفة الحالية (إن وجدت) =====
+        // تحديث عرض الغرفة النشطة
         updateActiveRoomView(map);
       });
-
-      // دالة منفصلة لتحديث عرض الغرفة النشطة
-      function updateActiveRoomView(map) {
-        if (!currentActiveRoomId) return;
-        const room = map && map[currentActiveRoomId];
-        if (!room) {
-          toast('Room closed');
-          closeRoomView();
-          return;
-        }
-
-        const activeMembers = Object.keys(room.members || {}).map(id => room.members[id]);
-        $('activeRoomName').textContent = room.name;
-        $('activeRoomCount').textContent = `${activeMembers.length}/${ROOM_CAPACITY}`;
-        $('activeRoomRoster').innerHTML = activeMembers.map(n =>
-          `<div class="chip"><span class="pulse"></span>${escapeHtml(n)}</div>`
-        ).join('') || '<div class="empty">No players inside</div>';
-
-        // عرض الأكواد
-        const codesMap = room.codes || {};
-        const entries = Object.keys(codesMap)
-          .map(codeId => ({ id: codeId, ...codesMap[codeId] }))
-          .sort((a, b) => b.ts - a.ts);
-
-        codeList.innerHTML = entries.map(en => `
-          <div class="code-row">
-            <div class="code-left">
-              <div class="code-val">${escapeHtml(en.code)}</div>
-              <div class="code-meta">by ${escapeHtml(en.name)}</div>
-            </div>
-            <button class="btn small ghost" data-copy="${escapeHtml(en.code)}">Copy</button>
-          </div>
-        `).join('');
-        codeEmpty.style.display = entries.length ? 'none' : 'block';
-
-        codeList.querySelectorAll('[data-copy]').forEach(btn => {
-          btn.addEventListener('click', () => {
-            navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(() => toast('Code copied'));
-          });
-        });
-      }
 
       // -------------------- FUNCTIONS --------------------
       function setUserName(newName) {
@@ -596,26 +580,21 @@
         myName = newName;
         localStorage.setItem('valorantQueueName', myName);
         updateNameDisplay();
-
         // تحديث الحضور فوراً
-        myPresenceRef.set({ name: myName, ts: Date.now() });
-
-        // تحديث عضوية الغرفة الحالية إن وجدت
+        updatePresence();
+        // تحديث عضوية الغرفة الحالية
         if (currentActiveRoomId) {
           db.ref('rooms/' + currentActiveRoomId + '/members/' + clientId).set(myName);
         }
-
-        // تحديث جميع الغرف التي ينتمي إليها المستخدم (قد يكون في عدة غرف، لكن النظام يسمح بواحدة فقط)
+        // تحديث جميع الغرف التي ينتمي إليها
         db.ref('rooms').once('value', snap => {
           const map = snap.val() || {};
           Object.keys(map).forEach(roomId => {
-            const room = map[roomId];
-            if (room.members && room.members[clientId]) {
+            if (map[roomId].members && map[roomId].members[clientId]) {
               db.ref('rooms/' + roomId + '/members/' + clientId).set(myName);
             }
           });
         });
-
         toast('Name updated');
       }
 
@@ -643,14 +622,10 @@
           if (Object.keys(members).length >= ROOM_CAPACITY) { toast('Room is full'); return; }
 
           const memberRef = db.ref('rooms/' + id + '/members/' + clientId);
-          // إلغاء أي onDisconnect سابق
           memberRef.onDisconnect().cancel();
-          // تعيين onDisconnect جديد
           memberRef.onDisconnect().remove();
-          // تعيين العضو
           return memberRef.set(myName).then(() => {
-            // تأكد من تحديث الحضور أيضاً
-            myPresenceRef.set({ name: myName, ts: Date.now() });
+            updatePresence();
             toast('Joined room');
             openRoomView(id);
           });
@@ -663,7 +638,7 @@
           if (!rm) return;
           const members = rm.members || {};
           const memberRef = db.ref('rooms/' + id + '/members/' + clientId);
-          memberRef.onDisconnect().cancel(); // إلغاء onDisconnect لمنع الحذف التلقائي بعد المغادرة
+          memberRef.onDisconnect().cancel();
           if (Object.keys(members).length <= 1 && members[clientId]) {
             db.ref('rooms/' + id).remove().then(() => {
               toast('Room closed');
@@ -683,7 +658,6 @@
         window.location.hash = 'room=' + roomId;
         $('mainView').style.display = 'none';
         $('roomView').style.display = 'block';
-        // تحديث فوري للعرض
         db.ref('rooms/' + roomId).once('value', snap => {
           const map = {};
           map[roomId] = snap.val();
@@ -696,6 +670,45 @@
         history.replaceState(null, null, ' ');
         $('roomView').style.display = 'none';
         $('mainView').style.display = 'block';
+      }
+
+      function updateActiveRoomView(map) {
+        if (!currentActiveRoomId) return;
+        const room = map && map[currentActiveRoomId];
+        if (!room) {
+          toast('Room closed');
+          closeRoomView();
+          return;
+        }
+
+        const activeMembers = Object.keys(room.members || {}).map(id => room.members[id]);
+        $('activeRoomName').textContent = room.name;
+        $('activeRoomCount').textContent = `${activeMembers.length}/${ROOM_CAPACITY}`;
+        $('activeRoomRoster').innerHTML = activeMembers.map(n =>
+          `<div class="chip"><span class="pulse"></span>${escapeHtml(n)}</div>`
+        ).join('') || '<div class="empty">No players inside</div>';
+
+        const codesMap = room.codes || {};
+        const entries = Object.keys(codesMap)
+          .map(codeId => ({ id: codeId, ...codesMap[codeId] }))
+          .sort((a, b) => b.ts - a.ts);
+
+        codeList.innerHTML = entries.map(en => `
+          <div class="code-row">
+            <div class="code-left">
+              <div class="code-val">${escapeHtml(en.code)}</div>
+              <div class="code-meta">by ${escapeHtml(en.name)}</div>
+            </div>
+            <button class="btn small ghost" data-copy="${escapeHtml(en.code)}">Copy</button>
+          </div>
+        `).join('');
+        codeEmpty.style.display = entries.length ? 'none' : 'block';
+
+        codeList.querySelectorAll('[data-copy]').forEach(btn => {
+          btn.addEventListener('click', () => {
+            navigator.clipboard.writeText(btn.getAttribute('data-copy')).then(() => toast('Code copied'));
+          });
+        });
       }
 
       // -------------------- EVENT LISTENERS --------------------
@@ -722,7 +735,6 @@
           .catch(() => toast("Couldn't reach the database"));
       }
 
-      // تحديث الاسم
       updateNameBtn.addEventListener('click', () => {
         const newName = usernameInput.value.trim();
         if (newName && newName !== myName) {
@@ -733,12 +745,9 @@
       });
 
       usernameInput.addEventListener('keydown', e => {
-        if (e.key === 'Enter') {
-          updateNameBtn.click();
-        }
+        if (e.key === 'Enter') updateNameBtn.click();
       });
 
-      // زر التحديث اليدوي للغرفة
       refreshRoomBtn.addEventListener('click', () => {
         if (currentActiveRoomId) {
           db.ref('rooms/' + currentActiveRoomId).once('value', snap => {
@@ -750,15 +759,9 @@
         }
       });
 
-      // -------------------- تحسين إضافي: تحديث الاسم في الغرفة عند التغيير --------------------
-      // سنستمع لتغييرات الاسم في الحضور ونحدث الأعضاء في الغرف إذا لزم الأمر
-      // لكننا بالفعل نقوم بتحديث عند setUserName.
-
-      // تنبيه: في حال تغير اسم المستخدم عبر localStorage من خارج الصفحة، لن يتم تحديثه تلقائياً.
-      // لكن هذا غير متوقع.
-
-      // -------------------- بدء التطبيق --------------------
+      // بدء التطبيق
       console.log('Valorant Queue started. Client ID:', clientId, 'Name:', myName);
+      updatePresence();
 
     })();
   </script>
