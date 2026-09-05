@@ -270,18 +270,6 @@
     }
     .room-name-setup input { max-width: 180px; }
     .room-name-setup .label { font-size: 13px; color: var(--steel); }
-
-    /* ===== NEW: two-column layout inside the room view ===== */
-    .room-columns {
-      display: grid;
-      grid-template-columns: 1fr 1fr;
-      gap: 32px;
-      align-items: start;
-    }
-    .room-columns .section { padding-top: 0; }
-    @media (max-width: 760px) {
-      .room-columns { grid-template-columns: 1fr; }
-    }
   </style>
 </head>
 <body>
@@ -303,7 +291,6 @@
         </div>
       </div>
       <div class="name-setup">
-        <span class="current-name" id="currentNameDisplay">Your name: </span>
         <input type="text" id="usernameInput" placeholder="Enter your name" maxlength="24">
         <button class="btn small" id="updateNameBtn">Update</button>
       </div>
@@ -341,33 +328,29 @@
       </div>
       <!-- حقل تغيير الاسم داخل الغرفة -->
       <div class="room-name-setup">
-        <span class="label">Your name:</span>
         <input type="text" id="roomUsernameInput" placeholder="Change name" maxlength="24">
         <button class="btn small" id="roomUpdateNameBtn">Update</button>
         <button class="btn small ghost" id="refreshRoomBtn">↻ Refresh</button>
       </div>
     </div>
 
-    <!-- Players (left) + Party Codes (right) side by side -->
-    <div class="room-columns">
-      <div class="section">
-        <div class="section-head">
-          <div class="section-title"><span class="bar"></span>Players in Room</div>
-        </div>
-        <div class="roster" id="activeRoomRoster"></div>
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title"><span class="bar"></span>Players in Room</div>
       </div>
+      <div class="roster" id="activeRoomRoster"></div>
+    </div>
 
-      <div class="section">
-        <div class="section-head">
-          <div class="section-title"><span class="bar"></span>Room Party Codes</div>
-        </div>
-        <div class="code-form">
-          <input type="text" id="codeInput" placeholder="PARTY CODE" maxlength="12">
-          <button class="btn" id="addCodeBtn">Post Code</button>
-        </div>
-        <div class="code-list" id="codeList"></div>
-        <div class="empty" id="codeEmpty" style="display:none;">No codes posted in this room yet.</div>
+    <div class="section">
+      <div class="section-head">
+        <div class="section-title"><span class="bar"></span>Room Party Codes</div>
       </div>
+      <div class="code-form">
+        <input type="text" id="codeInput" placeholder="PARTY CODE" maxlength="12">
+        <button class="btn" id="addCodeBtn">Post Code</button>
+      </div>
+      <div class="code-list" id="codeList"></div>
+      <div class="empty" id="codeEmpty" style="display:none;">No codes posted in this room yet.</div>
     </div>
 
     <div style="margin-top: 40px; display:flex; gap:12px; flex-wrap:wrap;">
@@ -443,13 +426,11 @@
       const toastEl = $('toast');
       const usernameInput = $('usernameInput');
       const updateNameBtn = $('updateNameBtn');
-      const currentNameDisplay = $('currentNameDisplay');
       const refreshRoomBtn = $('refreshRoomBtn');
       const roomUsernameInput = $('roomUsernameInput');
       const roomUpdateNameBtn = $('roomUpdateNameBtn');
 
       function updateNameDisplay() {
-        currentNameDisplay.textContent = 'Your name: ' + myName;
         usernameInput.value = myName;
         roomUsernameInput.value = myName; // تحديث حقل الاسم داخل الغرفة
       }
